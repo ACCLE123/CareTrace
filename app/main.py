@@ -24,7 +24,7 @@ app = FastAPI(title="CareTrace API", version="0.1.0", lifespan=lifespan)
 
 # Keep this explicit: the Vercel deployment URL must be added as an environment
 # variable rather than using a permissive wildcard for a clinical application.
-cors_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:8000,http://localhost:5173").split(",") if origin.strip()]
+cors_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:8000,http://localhost:3000,http://localhost:5173").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

@@ -10,9 +10,9 @@ CareTrace is a traceable longitudinal care-note prototype for the Nightingale 72
 docker compose up --build
 ```
 
-This starts the API at [http://localhost:8000](http://localhost:8000), with API documentation at `/docs`. Docker starts PostgreSQL 16 and FastAPI. To reset demo data, run `docker compose down -v` before starting again.
+This starts the Next.js frontend at [http://localhost:3000](http://localhost:3000), the API at [http://localhost:8000](http://localhost:8000), and PostgreSQL 16. API documentation is at `/docs`. To reset demo data, run `docker compose down -v` before starting again.
 
-For the browser app during local development, serve `frontend/` with any static server; absent Vercel runtime configuration, it defaults to `http://localhost:8000`. For production, deploy `frontend/` to Vercel as described in [frontend/README.md](frontend/README.md), set its `CARETRACE_API_BASE_URL` environment variable, and set the backend's `CORS_ORIGINS` to the exact Vercel origin.
+For the browser app during local development, run `cd frontend && npm install && npm run dev`; absent an environment override, it defaults to `http://localhost:8000`. For production, deploy `frontend/` to Vercel as described in [frontend/README.md](frontend/README.md), set its `NEXT_PUBLIC_API_BASE_URL` environment variable, and set the backend's `CORS_ORIGINS` to the exact Vercel origin.
 
 ## Run the required automated tests
 
@@ -59,7 +59,7 @@ The test suite includes the four requested files plus a small bonus test:
 app/main.py        API, role and clinic enforcement
 app/db.py          PostgreSQL schema and synthetic demo seed
 app/policy.py      pure policy, redaction, and test model
-frontend/          independently deployable Vercel static app
+frontend/          Next.js + TypeScript frontend, independently deployable to Vercel
 tests/             required micro-tests
 docs/TECHNICAL_BRIEF.md
 ```

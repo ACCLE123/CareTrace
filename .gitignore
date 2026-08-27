@@ -1,7 +1,10 @@
 .env
+.env.local
+.neon
 __pycache__/
 .pytest_cache/
 *.pyc
 data/
 frontend/node_modules/
 frontend/.next/
+.env.local

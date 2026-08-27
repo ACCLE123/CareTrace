@@ -10,9 +10,15 @@ CareTrace is a traceable longitudinal care-note prototype for the Nightingale 72
 docker compose up --build
 ```
 
-This starts the Next.js frontend at [http://localhost:3000](http://localhost:3000), the API at [http://localhost:8000](http://localhost:8000), and PostgreSQL 16. API documentation is at `/docs`. To reset demo data, run `docker compose down -v` before starting again.
+This starts the Next.js frontend at [http://localhost:3000](http://localhost:3000) and the API at [http://localhost:8000](http://localhost:8000), using the `DATABASE_URL` supplied by the git-ignored `.env.local` file. API documentation is at `/docs`. The Neon CLI writes that file after project linking. An optional local PostgreSQL container remains available only with `docker compose --profile local-postgres up`.
 
 For the browser app during local development, run `cd frontend && npm install && npm run dev`; absent an environment override, it defaults to `http://localhost:8000`. For production, deploy `frontend/` to Vercel as described in [frontend/README.md](frontend/README.md), set its `NEXT_PUBLIC_API_BASE_URL` environment variable, and set the backend's `CORS_ORIGINS` to the exact Vercel origin.
+
+### Neon Postgres
+
+The application runtime uses Neon's **pooled** `DATABASE_URL`, suitable for Vercel's concurrent serverless requests. The linked Neon CLI writes it to `.env.local`, alongside `DATABASE_URL_UNPOOLED`; use the latter only for schema migrations, backups, or administrative operations. Never commit either file or put these values in browser-visible variables.
+
+For the Vercel **backend** project, add the pooled `DATABASE_URL` and the exact `CORS_ORIGINS` of the deployed frontend in Project Settings → Environment Variables. The frontend only receives `NEXT_PUBLIC_API_BASE_URL`, never the database connection string.
 
 ## Run the required automated tests
 

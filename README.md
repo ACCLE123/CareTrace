@@ -73,7 +73,7 @@ The test suite includes the four requested files plus a small bonus test:
 
 ## Warm-path latency
 
-On 27 August 2026, 16 sequential HTTPS requests from the development machine to the deployed production Glance endpoint all returned HTTP 200. End-to-end P50 was **6.615 s** and P95 was **6.970 s** (min 6.446 s, max 6.970 s), so this deployment **does not yet meet** the ≤300 ms warm-path target. `Server-Timing` now reports the API's measured in-process duration for each request; it is not used as an end-to-end P95 claim. The next engineering step is to profile the Vercel-to-Neon connection path, retain/reuse pooled connections where supported, and reduce the endpoint's sequential database lookups before re-measuring from the target region.
+On 27 August 2026, after placing the production Vercel Function in Singapore (`sin1`) beside the Singapore Neon project, 16 sequential HTTPS requests from the development machine to the deployed Glance endpoint all returned HTTP 200. End-to-end P50 was **188.723 ms** and P95 was **234.287 ms** (min 173.640 ms, max 234.287 ms), meeting the ≤300 ms warm-path target for this small production sample. The response header confirmed `x-vercel-id: sin1::sin1`, while `Server-Timing` reports the measured in-process API segment (54.3 ms on the verification request); neither replaces ongoing regional load testing.
 
 ## Project layout
 

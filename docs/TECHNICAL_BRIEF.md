@@ -102,9 +102,9 @@ All demonstration data is synthetic. Before every DeepSeek request, text passes 
 
 ## Measured production latency
 
-On 27 August 2026, the deployed `GET /api/patients/{id}/glance` endpoint was exercised with 16 sequential HTTPS requests from the development machine, each using the clinician demo identity. All 16 responses were HTTP 200. The observed end-to-end timing was **P50 6.615 s**, **P95 6.970 s**, minimum 6.446 s, and maximum 6.970 s. This fails the brief's ≤300 ms warm-path requirement and is reported here rather than hidden behind a synthetic timing label.
+On 27 August 2026, after moving the production Vercel Function from Washington (`iad1`) to Singapore (`sin1`) beside the Singapore Neon database, the deployed `GET /api/patients/{id}/glance` endpoint was exercised with 16 sequential HTTPS requests from the development machine, each using the clinician demo identity. All 16 responses were HTTP 200. The observed end-to-end timing was **P50 188.723 ms**, **P95 234.287 ms**, minimum 173.640 ms, and maximum 234.287 ms—within the brief's ≤300 ms warm-path target for this small sample. A follow-up response header confirmed `x-vercel-id: sin1::sin1` and an in-process `Server-Timing: glance;dur=54.3` ms.
 
-`Server-Timing` reports the API process segment only and should not be interpreted as end-to-end latency. The likely next investigation is the Vercel-to-Neon request path: the API currently performs multiple sequential database lookups per request. The remediation plan is to verify that the deployment uses Neon's pooled connection string, consolidate the actor/patient/glance reads where safe, add warm-pool-aware load testing in the serving region, then re-measure P95. No clinical safety or access-control guarantee depends on the current latency claim.
+`Server-Timing` reports the API process segment only and should not be interpreted as end-to-end latency; the P95 above is the reported end-to-end measurement. A production next step is a larger warm-pool-aware test from the target region, plus consolidating the actor/patient/glance database lookups where safe. No clinical safety or access-control guarantee depends on this latency claim.
 
 ## Importance, evaluation, and restraint
 

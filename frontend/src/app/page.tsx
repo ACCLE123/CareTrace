@@ -11,6 +11,7 @@ type TimelineEntry = { id: string; author_role: string; author_name: string; ent
 type CareComment = { id: string; entry_id: string; body: string; mention_role?: Role; resolved: boolean; created_at: string; author_name: string; author_role: Role };
 type Glance = { highlights: Highlight[]; open_actions: { id: string; content: string }[]; policy: string };
 type Version = { version: number; content: string; created_at: string };
+type AuditEvent = { action: string; entity_type: string; entity_id: string; metadata: Record<string, unknown>; created_at: string };
 type ScribeSource = "patient_session" | "nurse_consult" | "doctor_consult";
 
 const formatDate = (value: string) => new Intl.DateTimeFormat("en-SG", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
@@ -23,11 +24,16 @@ export default function CareTracePage() {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [comments, setComments] = useState<CareComment[]>([]);
   const [commentOpen, setCommentOpen] = useState<string>();
+  const [editingEntry, setEditingEntry] = useState<TimelineEntry>();
+  const [editContent, setEditContent] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [scribeOpen, setScribeOpen] = useState(false);
   const [scribeBusy, setScribeBusy] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<TimelineEntry>();
   const [versions, setVersions] = useState<Version[]>([]);
+  const [compareVersion, setCompareVersion] = useState<Version>();
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [message, setMessage] = useState("");
 
   const request = useCallback(async <T,>(path: string, options: RequestInit = {}, identity = actor): Promise<T> => {
@@ -81,11 +87,13 @@ export default function CareTracePage() {
 
   const canAdd = actor && ["staff", "clinician"].includes(actor.role);
   const canCollaborate = actor && ["staff", "clinician"].includes(actor.role);
+  const canAudit = actor && ["clinician", "admin"].includes(actor.role);
   const selectedCurrent = useMemo(() => timeline.find((entry) => entry.id === selectedEntry?.id), [timeline, selectedEntry]);
 
   async function showVersions(entry: TimelineEntry) {
     try {
       setSelectedEntry(entry);
+      setCompareVersion(undefined);
       setVersions(await request<Version[]>(`/api/entries/${entry.id}/versions`));
     } catch (error) { setMessage((error as Error).message); }
   }
@@ -134,6 +142,28 @@ export default function CareTracePage() {
     } catch (error) { setMessage((error as Error).message); }
   }
 
+  function beginEdit(entry: TimelineEntry) {
+    setEditingEntry(entry);
+    setEditContent(entry.content);
+  }
+
+  async function submitEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingEntry) return;
+    try {
+      await request(`/api/entries/${editingEntry.id}`, { method: "PATCH", body: JSON.stringify({ content: editContent, expected_version: editingEntry.version }) });
+      setEditingEntry(undefined); setMessage("Saved as a new version with an audit record."); await refresh();
+    } catch (error) { setMessage((error as Error).message); }
+  }
+
+  async function showAudit() {
+    if (!patient) return;
+    try {
+      setAuditEvents(await request<AuditEvent[]>(`/api/patients/${patient.id}/audit`));
+      setAuditOpen(true);
+    } catch (error) { setMessage((error as Error).message); }
+  }
+
   async function submitComment(entryId: string, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -161,9 +191,11 @@ export default function CareTracePage() {
           const entryComments = comments.filter((comment) => comment.entry_id === entry.id);
           return <article className={`entry ${entry.author_role}`} id={`entry-${entry.id}`} key={entry.id}><div><header><span>{entry.author_name} · {entry.entry_type.replaceAll("_", " ")}</span><time>{formatDate(entry.created_at)}</time></header><p>{entry.content}</p><footer><em>{entry.visibility === "patient" ? "Patient-facing" : "Internal"}</em>{entry.provenance_pointer && <em>Source: {entry.provenance_pointer}</em>}{canAdd && <button onClick={() => showVersions(entry)}>History · v{entry.version}</button>}{canCollaborate && <button onClick={() => setCommentOpen(commentOpen === entry.id ? undefined : entry.id)}>Comment{entryComments.length ? ` · ${entryComments.length}` : ""}</button>}</footer>{canCollaborate && entryComments.length > 0 && <section className="commentThread" aria-label="Internal collaboration comments">{entryComments.map((comment) => <article className={`comment ${comment.resolved ? "resolved" : ""}`} key={comment.id}><div><b>{comment.author_name}</b>{comment.mention_role && <span>@{comment.mention_role}</span>}<time>{formatDate(comment.created_at)}</time></div><p>{comment.body}</p><button onClick={() => setCommentResolution(comment.id, !comment.resolved)}>{comment.resolved ? "Reopen" : "Resolve"}</button></article>)}</section>}{canCollaborate && commentOpen === entry.id && <form className="commentForm" onSubmit={(event) => submitComment(entry.id, event)}><textarea name="body" placeholder="Internal collaboration comment…" minLength={2} maxLength={1200} required /><div><select name="mention_role" defaultValue=""><option value="">No role mention</option><option value="clinician">@clinician</option><option value="staff">@staff</option></select><button type="button" className="quiet" onClick={() => setCommentOpen(undefined)}>Cancel</button><button className="primary">Add comment</button></div></form>}</div></article>;
         })}</div></section>
-        <section id="trust" className="trust"><p className="eyebrow">Trust model</p><h2>Auditable by design</h2><div><p><b>Provenance</b><br />Every highlight links directly to its source entry.</p><p><b>Permissions</b><br />The API checks role and clinic scope, not just the screen.</p><p><b>Calibration</b><br />Feedback is bounded; critical classes keep a safety floor.</p></div></section>
+        <section id="trust" className="trust"><p className="eyebrow">Trust model</p><h2>Auditable by design</h2><div><p><b>Provenance</b><br />Every highlight links directly to its source entry.</p><p><b>Permissions</b><br />The API checks role and clinic scope, not just the screen.</p><p><b>Calibration</b><br />Feedback is bounded; critical classes keep a safety floor.</p></div>{canAudit && <button className="primary auditButton" onClick={showAudit}>Open audit trail</button>}</section>
       </section></div>
-    {selectedEntry && <div className="modalBackdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true"><button className="close" onClick={() => setSelectedEntry(undefined)}>×</button><p className="eyebrow">Revision history</p><h2>Note versions</h2>{versions.map((version) => <article className="version" key={version.version}><b>Version {version.version}</b> · {formatDate(version.created_at)}<p>{version.content}</p>{version.version !== selectedCurrent?.version && <button onClick={() => revert(version.version)}>Revert to this version</button>}</article>)}</section></div>}
+    {selectedEntry && <div className="modalBackdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true"><button className="close" onClick={() => { setSelectedEntry(undefined); setCompareVersion(undefined); }}>×</button><p className="eyebrow">Revision history</p><h2>Note versions</h2>{selectedCurrent && actor?.role === selectedCurrent.author_role && <button className="primary modalAction" onClick={() => { beginEdit(selectedCurrent); setSelectedEntry(undefined); }}>Edit current note</button>}{versions.map((version) => <article className="version" key={version.version}><b>Version {version.version}</b> · {formatDate(version.created_at)}<p>{version.content}</p><div className="versionActions"><button onClick={() => setCompareVersion(version)}>Compare to current</button>{version.version !== selectedCurrent?.version && <button onClick={() => revert(version.version)}>Revert to this version</button>}</div></article>)}{compareVersion && selectedCurrent && <section className="diffView"><p className="eyebrow">Change comparison</p><h3>Version {compareVersion.version} → current v{selectedCurrent.version}</h3><div><article><b>Earlier snapshot</b><p>{compareVersion.content}</p></article><article><b>Current content</b><p>{selectedCurrent.content}</p></article></div></section>}</section></div>}
+    {editingEntry && <div className="modalBackdrop" role="presentation"><form className="modal editModal" role="dialog" aria-modal="true" onSubmit={submitEdit}><button type="button" className="close" onClick={() => setEditingEntry(undefined)}>×</button><p className="eyebrow">Audited edit</p><h2>Edit note</h2><p className="muted">Saving creates version {editingEntry.version + 1}; it never overwrites history.</p><textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} minLength={4} maxLength={4000} required /><div><button type="button" className="quiet" onClick={() => setEditingEntry(undefined)}>Cancel</button><button className="primary">Save new version</button></div></form></div>}
+    {auditOpen && <div className="modalBackdrop" role="presentation"><section className="modal auditModal" role="dialog" aria-modal="true"><button className="close" onClick={() => setAuditOpen(false)}>×</button><p className="eyebrow">Clinic-scoped oversight</p><h2>Audit trail</h2>{auditEvents.length ? auditEvents.map((event) => <article className="auditEvent" key={`${event.entity_id}-${event.created_at}`}><b>{event.action.replaceAll("_", " ")}</b><time>{formatDate(event.created_at)}</time><p>{event.entity_type} · {event.entity_id.slice(0, 8)}{Object.keys(event.metadata).length ? ` · ${JSON.stringify(event.metadata)}` : ""}</p></article>) : <p className="muted">No audit events yet.</p>}</section></div>}
     {message && <div className="toast">{message}</div>}
   </main>;
 }

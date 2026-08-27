@@ -4,6 +4,22 @@ CareTrace is a traceable longitudinal care-note prototype for the Nightingale 72
 
 > **Safety posture:** This is a demo using synthetic data only. It does not diagnose, triage, or replace clinical judgment. AI-produced content is labelled as system-authored and is never exposed directly to the patient role.
 
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+  U[Care team or patient] --> W[Vercel frontend\nNext.js]
+  W -->|HTTPS + demo identity| A[FastAPI API\nVercel sin1]
+  A --> R[Server-side RBAC\nclinic scope + ownership]
+  A --> P[Provenance, revision\nand conflict policy]
+  A --> X[Redaction boundary]
+  X --> D[DeepSeek V4 Flash\nstructured candidate extraction]
+  A --> N[(Neon Postgres\nSingapore)]
+  N --> T[Timeline · versions · comments\nhighlights · audit · conflicts]
+```
+
+The browser never receives database credentials or the DeepSeek API key. AI output remains an internal, traceable candidate record; only clinician-approved instructions can be patient-facing.
+
 ## Start in one command
 
 ```bash
@@ -74,6 +90,8 @@ The test suite includes the four requested files plus a small bonus test:
 ## Warm-path latency
 
 On 27 August 2026, after placing the production Vercel Function in Singapore (`sin1`) beside the Singapore Neon project, 16 sequential HTTPS requests from the development machine to the deployed Glance endpoint all returned HTTP 200. End-to-end P50 was **188.723 ms** and P95 was **234.287 ms** (min 173.640 ms, max 234.287 ms), meeting the ≤300 ms warm-path target for this small production sample. The response header confirmed `x-vercel-id: sin1::sin1`, while `Server-Timing` reports the measured in-process API segment (54.3 ms on the verification request); neither replaces ongoing regional load testing.
+
+![Production Glance API P95 latency before and after regional co-location](docs/assets/glance-latency.svg)
 
 ## Project layout
 

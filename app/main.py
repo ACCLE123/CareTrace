@@ -68,6 +68,10 @@ class CommentPayload(BaseModel):
     mention_role: Literal["staff", "clinician"] | None = None
 
 
+class CommentResolutionPayload(BaseModel):
+    resolved: bool
+
+
 class FeedbackPayload(BaseModel):
     accepted: bool
 
@@ -299,6 +303,40 @@ def create_comment(entry_id: str, payload: CommentPayload, a: dict = Depends(act
         audit(conn, a["clinic_id"], a["id"], "comment_created", "comment", comment_id, {"entry_id": entry_id})
         conn.commit()
     return {"id": comment_id}
+
+
+@app.get("/api/patients/{patient_id}/comments")
+def patient_comments(patient_id: str, a: dict = Depends(actor)) -> list[dict]:
+    """Return internal collaboration only to clinic-scoped care-team roles."""
+    patient_scope(a, patient_id)
+    if a["role"] not in {Role.STAFF, Role.CLINICIAN, Role.ADMIN}:
+        raise HTTPException(403, "Patients cannot access internal collaboration comments.")
+    with connection() as conn:
+        return conn.execute(
+            """SELECT c.id::text, c.entry_id::text, c.body, c.mention_role, c.resolved, c.created_at,
+                      u.display_name AS author_name, u.role AS author_role
+               FROM comments c
+               JOIN entries e ON e.id=c.entry_id
+               JOIN users u ON u.id=c.author_id
+               WHERE e.patient_id=%s AND c.clinic_id=%s
+               ORDER BY c.resolved ASC, c.created_at ASC""",
+            (patient_id, a["clinic_id"]),
+        ).fetchall()
+
+
+@app.patch("/api/comments/{comment_id}")
+def resolve_comment(comment_id: str, payload: CommentResolutionPayload, a: dict = Depends(actor)) -> dict:
+    if a["role"] not in {Role.STAFF, Role.CLINICIAN}:
+        raise HTTPException(403, "Only care-team roles may resolve collaboration comments.")
+    with connection() as conn:
+        comment = conn.execute("SELECT id::text, clinic_id::text, resolved FROM comments WHERE id=%s", (comment_id,)).fetchone()
+        if not comment or comment["clinic_id"] != a["clinic_id"]:
+            raise HTTPException(404, "Comment not found.")
+        if comment["resolved"] != payload.resolved:
+            conn.execute("UPDATE comments SET resolved=%s WHERE id=%s", (payload.resolved, comment_id))
+            audit(conn, a["clinic_id"], a["id"], "comment_resolved" if payload.resolved else "comment_reopened", "comment", comment_id)
+            conn.commit()
+    return {"id": comment_id, "resolved": payload.resolved}
 
 
 @app.post("/api/highlights/{highlight_id}/feedback")

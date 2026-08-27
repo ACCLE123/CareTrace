@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
+from time import perf_counter
 from typing import Literal
 from uuid import uuid4
 
@@ -174,6 +175,7 @@ def timeline(patient_id: str, a: dict = Depends(actor)) -> list[dict]:
 
 @app.get("/api/patients/{patient_id}/glance")
 def glance(patient_id: str, response: Response, a: dict = Depends(actor)) -> dict:
+    started_at = perf_counter()
     patient = patient_scope(a, patient_id)
     filter_sql, _ = visible_clause(a)
     with connection() as conn:
@@ -185,7 +187,7 @@ def glance(patient_id: str, response: Response, a: dict = Depends(actor)) -> dic
         actions = conn.execute(f"""
             SELECT id::text, content FROM entries e WHERE patient_id=%s {filter_sql} AND (content ILIKE '%%requested%%' OR content ILIKE '%%escalate%%') ORDER BY created_at DESC LIMIT 3
         """, (patient_id,)).fetchall()
-    response.headers["Server-Timing"] = "glance;dur=8"
+    response.headers["Server-Timing"] = f"glance;dur={(perf_counter() - started_at) * 1000:.1f}"
     return {"patient": patient, "highlights": highlights, "open_actions": actions, "policy": "High-risk classes keep a deterministic safety floor; scores are suggestions, not diagnoses."}
 
 

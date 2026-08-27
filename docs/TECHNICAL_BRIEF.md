@@ -100,6 +100,12 @@ Every edit carries `expected_version`. PostgreSQL only updates when the current 
 
 All demonstration data is synthetic. Before every DeepSeek request, text passes a redaction egress function for titled names, identity numbers, and phones. The provider credential remains server-side; no raw key, request authorization header, or raw provider response is put into audit logs. Production additionally needs authenticated identity, database-at-rest encryption, TLS, secret management, PII evaluation, tenant RLS, and a clinical safety review.
 
+## Measured production latency
+
+On 27 August 2026, the deployed `GET /api/patients/{id}/glance` endpoint was exercised with 16 sequential HTTPS requests from the development machine, each using the clinician demo identity. All 16 responses were HTTP 200. The observed end-to-end timing was **P50 6.615 s**, **P95 6.970 s**, minimum 6.446 s, and maximum 6.970 s. This fails the brief's ≤300 ms warm-path requirement and is reported here rather than hidden behind a synthetic timing label.
+
+`Server-Timing` reports the API process segment only and should not be interpreted as end-to-end latency. The likely next investigation is the Vercel-to-Neon request path: the API currently performs multiple sequential database lookups per request. The remediation plan is to verify that the deployment uses Neon's pooled connection string, consolidate the actor/patient/glance reads where safe, add warm-pool-aware load testing in the serving region, then re-measure P95. No clinical safety or access-control guarantee depends on the current latency claim.
+
 ## Importance, evaluation, and restraint
 
 A score is only useful if its behaviour is clear. This prototype has two components:

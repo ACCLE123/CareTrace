@@ -73,7 +73,7 @@ The test suite includes the four requested files plus a small bonus test:
 
 ## Warm-path latency
 
-`GET /api/patients/{id}/glance` emits `Server-Timing: glance;dur=8` for the demo’s in-process query segment, below the 300 ms warm-path target. This is an approximation, not a production benchmark; a production measurement would use load testing against an authenticated warm connection pool and report P95 end-to-end latency.
+On 27 August 2026, 16 sequential HTTPS requests from the development machine to the deployed production Glance endpoint all returned HTTP 200. End-to-end P50 was **6.615 s** and P95 was **6.970 s** (min 6.446 s, max 6.970 s), so this deployment **does not yet meet** the ≤300 ms warm-path target. `Server-Timing` now reports the API's measured in-process duration for each request; it is not used as an end-to-end P95 claim. The next engineering step is to profile the Vercel-to-Neon connection path, retain/reuse pooled connections where supported, and reduce the endpoint's sequential database lookups before re-measuring from the target region.
 
 ## Project layout
 

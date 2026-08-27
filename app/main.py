@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.db import IDS, audit, connection, init_db
@@ -20,8 +20,19 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CareTrace", version="0.1.0", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app = FastAPI(title="CareTrace API", version="0.1.0", lifespan=lifespan)
+
+# Keep this explicit: the Vercel deployment URL must be added as an environment
+# variable rather than using a permissive wildcard for a clinical application.
+cors_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:8000,http://localhost:5173").split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Demo-User"],
+    expose_headers=["Server-Timing"],
+)
 
 
 class EntryPayload(BaseModel):
@@ -83,8 +94,8 @@ def entry_scope(a: dict, entry_id: str) -> dict:
 
 
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse("app/static/index.html")
+def index() -> dict:
+    return {"name": "CareTrace API", "docs": "/docs", "health": "/healthz"}
 
 
 @app.get("/healthz")

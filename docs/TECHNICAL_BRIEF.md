@@ -17,7 +17,7 @@ The failure mode in longitudinal care is not a lack of prose; it is losing conte
 
 ```mermaid
 flowchart LR
-  B[Responsive browser] -->|X-Demo-User\nprototype only| A[FastAPI API]
+  B[Vercel static frontend] -->|HTTPS API calls\nX-Demo-User prototype only| A[FastAPI API]
   A --> R[RBAC + clinic scope\n+entry ownership]
   A --> P[Provenance + highlight policy]
   A --> X[PHI redaction egress boundary]
@@ -30,7 +30,7 @@ flowchart LR
   DB --> L[audit_log]
 ```
 
-`docker compose up --build` creates the two containers. PostgreSQL owns durable state; FastAPI initializes schema and clearly synthetic seed data. FastAPI holds no permission state in the client. The selector in the demo sets an `X-Demo-User` header, which the API resolves against `users`; production replaces this only with verified session/JWT claims.
+`docker compose up --build` creates the backend and database containers. The static `frontend/` directory deploys independently to Vercel; its public `CARETRACE_API_BASE_URL` points to the API. PostgreSQL owns durable state; FastAPI initializes schema and clearly synthetic seed data. FastAPI holds no permission state in the client. The selector in the demo sets an `X-Demo-User` header, which the API resolves against `users`; production replaces this only with verified session/JWT claims. CORS permits only explicit configured origins, including the deployed Vercel URL.
 
 ### Data schema and lineage
 

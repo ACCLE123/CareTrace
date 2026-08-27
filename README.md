@@ -1,6 +1,6 @@
 # CareTrace
 
-CareTrace is a traceable longitudinal care-note prototype for the Nightingale 72HR Build. It is intentionally scoped to one synthetic patient story: a clinician can see a consult-ready Glance View, follow every highlight back to an exact source entry, collaborate without cross-role overwrites, and inspect version history.
+CareTrace is a traceable longitudinal care-note prototype for the Nightingale 72HR Build. It is intentionally scoped to one synthetic patient story: a clinician can see a consult-ready Glance View, follow every highlight back to an exact source entry, collaborate without cross-role overwrites, and inspect version history. The frontend is an independent static app in `frontend/`, ready for Vercel; the backend is a FastAPI API backed by PostgreSQL.
 
 > **Safety posture:** This is a demo using synthetic data only. It does not diagnose, triage, or replace clinical judgment. AI-produced content is labelled as system-authored and is never exposed directly to the patient role.
 
@@ -10,7 +10,9 @@ CareTrace is a traceable longitudinal care-note prototype for the Nightingale 72
 docker compose up --build
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Docker starts PostgreSQL 16 and the FastAPI application. To reset demo data, run `docker compose down -v` before starting again.
+This starts the API at [http://localhost:8000](http://localhost:8000), with API documentation at `/docs`. Docker starts PostgreSQL 16 and FastAPI. To reset demo data, run `docker compose down -v` before starting again.
+
+For the browser app during local development, serve `frontend/` with any static server; absent Vercel runtime configuration, it defaults to `http://localhost:8000`. For production, deploy `frontend/` to Vercel as described in [frontend/README.md](frontend/README.md), set its `CARETRACE_API_BASE_URL` environment variable, and set the backend's `CORS_ORIGINS` to the exact Vercel origin.
 
 ## Run the required automated tests
 
@@ -57,8 +59,7 @@ The test suite includes the four requested files plus a small bonus test:
 app/main.py        API, role and clinic enforcement
 app/db.py          PostgreSQL schema and synthetic demo seed
 app/policy.py      pure policy, redaction, and test model
-app/static/        responsive demo UI
+frontend/          independently deployable Vercel static app
 tests/             required micro-tests
 docs/TECHNICAL_BRIEF.md
 ```
-

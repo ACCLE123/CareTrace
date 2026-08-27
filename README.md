@@ -51,9 +51,10 @@ The test suite includes the four requested files plus a small bonus test:
 
 1. Start as **Dr. Mira Chen**. The Glance View shows a deterministic high-risk allergy signal, the current chest-discomfort escalation, and open actions.
 2. Click **View source in timeline** on any card. It scrolls directly to the source-of-truth entry with author role, entry type, timestamp, and source pointer.
-3. Add a care note or open **History** on a clinician note. Revert a prior version: the operation makes a new snapshot and an audit event rather than mutating history.
+3. Add a care note or open **History** on a clinician note. Compare a prior snapshot, edit the current note, or revert a prior version: every successful save makes a new snapshot and audit event rather than mutating history.
 4. Select **AI scribe**, choose a synthetic patient session, nurse consult, or doctor consult, and generate a DeepSeek candidate note. The generated `system` entry points to its source transcript; accept or reject its Glance suggestion as a care-team member.
 5. Switch to **Nurse Aisha Lim**. Staff can create staff notes but cannot change clinical assessments. Switch to the synthetic patient: internal AI notes and internal collaboration disappear because the API filters them server-side.
+6. As a clinician, add a synthetic contradiction such as “No known penicillin allergy.” CareTrace creates a **Needs clinician review** card linking the earlier allergy source and the new note. Confirm the newer record or retain the earlier one; the system never resolves it automatically.
 
 ## Architecture and controls
 
@@ -63,6 +64,7 @@ The test suite includes the four requested files plus a small bonus test:
 - **Optimistic concurrency:** edits and reverts issue `UPDATE ... WHERE version = expected_version`. A stale write gets HTTP 409 and must refresh. Independent entries can be edited in parallel.
 - **Provenance:** highlights store `timeline:<entry_uuid>#source`; this exact pointer resolves to the producing timeline entry. AI entries also retain an upstream session or consult pointer.
 - **Importance:** high risk tags and explicit escalation/allergy language provide a deterministic safety floor. Care-team acceptance adds a persisted, bounded `+5` type weight for future same-type suggestions, never suppressing a safety floor. Scores are prioritisation suggestions, not clinical certainty.
+- **Content conflict review:** transparent rules flag only directly opposed allergy statements, same-medication dose differences, and opposite documented ECG/troponin plans. Each flag links both timeline sources; only a clinician can record a decision, which is audited. No source is silently overwritten.
 - **Patient safety:** only `visibility='patient'` clinician-approved instructions may reach a patient response. Internal notes, raw AI entries, comments, audit log, and highlights are excluded by the API.
 
 ## Redaction boundary

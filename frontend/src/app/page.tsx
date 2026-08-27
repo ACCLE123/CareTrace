@@ -9,6 +9,7 @@ type Patient = { id: string; display_name: string; date_of_birth: string; synthe
 type Highlight = { id: string; entry_id: string; excerpt: string; risk_reason: string; importance: number; status: string };
 type TimelineEntry = { id: string; author_role: string; author_name: string; entry_type: string; visibility: string; content: string; provenance_pointer?: string; risk_level: string; version: number; created_at: string };
 type CareComment = { id: string; entry_id: string; body: string; mention_role?: Role; resolved: boolean; created_at: string; author_name: string; author_role: Role };
+type ClinicalConflict = { id: string; category: string; reason: string; status: string; created_at: string; newer_entry_id: string; newer_content: string; newer_pointer?: string; prior_entry_id: string; prior_content: string; prior_pointer?: string };
 type Glance = { highlights: Highlight[]; open_actions: { id: string; content: string }[]; policy: string };
 type Version = { version: number; content: string; created_at: string };
 type AuditEvent = { action: string; entity_type: string; entity_id: string; metadata: Record<string, unknown>; created_at: string };
@@ -23,6 +24,7 @@ export default function CareTracePage() {
   const [glance, setGlance] = useState<Glance>();
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [comments, setComments] = useState<CareComment[]>([]);
+  const [conflicts, setConflicts] = useState<ClinicalConflict[]>([]);
   const [commentOpen, setCommentOpen] = useState<string>();
   const [editingEntry, setEditingEntry] = useState<TimelineEntry>();
   const [editContent, setEditContent] = useState("");
@@ -50,16 +52,20 @@ export default function CareTracePage() {
 
   const refresh = useCallback(async () => {
     if (!actor || !patient) return;
-    const [freshGlance, freshTimeline, freshComments] = await Promise.all([
+    const [freshGlance, freshTimeline, freshComments, freshConflicts] = await Promise.all([
       request<Glance>(`/api/patients/${patient.id}/glance`),
       request<TimelineEntry[]>(`/api/patients/${patient.id}/timeline`),
       ["staff", "clinician", "admin"].includes(actor.role)
         ? request<CareComment[]>(`/api/patients/${patient.id}/comments`)
         : Promise.resolve([] as CareComment[]),
+      ["staff", "clinician", "admin"].includes(actor.role)
+        ? request<ClinicalConflict[]>(`/api/patients/${patient.id}/conflicts`)
+        : Promise.resolve([] as ClinicalConflict[]),
     ]);
     setGlance(freshGlance);
     setTimeline(freshTimeline);
     setComments(freshComments);
+    setConflicts(freshConflicts);
   }, [actor, patient, request]);
 
   useEffect(() => {
@@ -88,6 +94,8 @@ export default function CareTracePage() {
   const canAdd = actor && ["staff", "clinician"].includes(actor.role);
   const canCollaborate = actor && ["staff", "clinician"].includes(actor.role);
   const canAudit = actor && ["clinician", "admin"].includes(actor.role);
+  const canViewConflicts = actor && ["staff", "clinician", "admin"].includes(actor.role);
+  const canResolveConflicts = actor?.role === "clinician";
   const selectedCurrent = useMemo(() => timeline.find((entry) => entry.id === selectedEntry?.id), [timeline, selectedEntry]);
 
   async function showVersions(entry: TimelineEntry) {
@@ -181,12 +189,19 @@ export default function CareTracePage() {
     } catch (error) { setMessage((error as Error).message); }
   }
 
+  async function resolveConflict(conflictId: string, decision: "confirmed_new" | "retained_existing") {
+    try {
+      await request(`/api/conflicts/${conflictId}`, { method: "PATCH", body: JSON.stringify({ decision }) });
+      setMessage(decision === "confirmed_new" ? "Clinician confirmed the newer record." : "Clinician retained the earlier record."); await refresh();
+    } catch (error) { setMessage((error as Error).message); }
+  }
+
   return <main className="shell">
     <header className="topbar"><div className="brand"><span>✦</span>CareTrace <small>clinical collaboration prototype</small></div>
       <label>Demo role <select value={actor?.id || ""} onChange={(event) => setActor(identities.find((person) => person.id === event.target.value))}>{identities.map((person) => <option key={person.id} value={person.id}>{person.display_name} — {person.role}</option>)}</select></label>
     </header>
     <div className="layout"><aside><p className="eyebrow">One shared care note</p><h1>{patient?.display_name || "Loading…"}</h1><p className="muted">Synthetic patient · Never for diagnosis</p><nav><a href="#glance">Glance view</a><a href="#timeline">Longitudinal timeline</a><a href="#trust">Trust & provenance</a></nav><section className="guardrail"><b>Safety boundary</b><p>AI extracts traceable candidate facts. The care team decides; the patient only sees clinician-approved instructions.</p></section></aside>
-      <section className="workspace"><section id="glance"><div className="sectionHeading"><div><p className="eyebrow">Consult snapshot</p><h2>What needs attention now</h2></div><span className="latency">Warm path <b>8ms</b></span></div><p className="muted">{glance?.policy}</p><div className="cards">{glance?.highlights.map((highlight) => <article className={`card ${highlight.importance >= 90 ? "critical" : ""}`} key={highlight.id}><span>{highlight.importance >= 90 ? "Critical safety floor" : "Attention suggested"} · {highlight.importance}/100</span><p>{highlight.excerpt}</p><small>{highlight.risk_reason}</small><button onClick={() => document.getElementById(`entry-${highlight.entry_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>View source in timeline ↓</button>{canAdd && highlight.status === "suggested" && <div className="feedback"><button onClick={() => recordHighlightFeedback(highlight.id, true)}>Accept</button><button onClick={() => recordHighlightFeedback(highlight.id, false)}>Reject</button></div>}{highlight.status !== "suggested" && <small className="feedbackStatus">Care team: {highlight.status}</small>}</article>)}</div><div className="actions"><h3>Open actions</h3>{glance?.open_actions.map((action) => <p key={action.id}>{action.content}</p>)}</div></section>
+      <section className="workspace"><section id="glance"><div className="sectionHeading"><div><p className="eyebrow">Consult snapshot</p><h2>What needs attention now</h2></div><span className="latency">Warm path <b>8ms</b></span></div><p className="muted">{glance?.policy}</p><div className="cards">{glance?.highlights.map((highlight) => <article className={`card ${highlight.importance >= 90 ? "critical" : ""}`} key={highlight.id}><span>{highlight.importance >= 90 ? "Critical safety floor" : "Attention suggested"} · {highlight.importance}/100</span><p>{highlight.excerpt}</p><small>{highlight.risk_reason}</small><button onClick={() => document.getElementById(`entry-${highlight.entry_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>View source in timeline ↓</button>{canAdd && highlight.status === "suggested" && <div className="feedback"><button onClick={() => recordHighlightFeedback(highlight.id, true)}>Accept</button><button onClick={() => recordHighlightFeedback(highlight.id, false)}>Reject</button></div>}{highlight.status !== "suggested" && <small className="feedbackStatus">Care team: {highlight.status}</small>}</article>)}</div><div className="actions"><h3>Open actions</h3>{glance?.open_actions.map((action) => <p key={action.id}>{action.content}</p>)}</div>{canViewConflicts && conflicts.some((conflict) => conflict.status === "needs_clinician_review") && <section className="conflictReview"><p className="eyebrow">Human decision required</p><h3>Conflicting source records</h3>{conflicts.filter((conflict) => conflict.status === "needs_clinician_review").map((conflict) => <article key={conflict.id}><span>Needs clinician review · {conflict.category.replaceAll("_", " ")}</span><p>{conflict.reason}</p><div><button onClick={() => document.getElementById(`entry-${conflict.prior_entry_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>Earlier source ↓</button><button onClick={() => document.getElementById(`entry-${conflict.newer_entry_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>Newer source ↓</button>{canResolveConflicts && <><button onClick={() => resolveConflict(conflict.id, "confirmed_new")}>Confirm newer record</button><button onClick={() => resolveConflict(conflict.id, "retained_existing")}>Retain earlier record</button></>}</div></article>)}</section>}</section>
         <section id="timeline" className="timeline"><div className="sectionHeading"><div><p className="eyebrow">Source of truth</p><h2>Longitudinal timeline</h2></div>{canAdd && <div className="timelineButtons"><button className="quiet" onClick={() => setScribeOpen(true)}>AI scribe</button><button className="primary" onClick={() => setNoteOpen(true)}>Add care note</button></div>}</div>{scribeOpen && <form className="noteForm" onSubmit={submitScribe}><p className="eyebrow">Synthetic source only · redacted before DeepSeek</p><select name="interaction_type" defaultValue="doctor_consult"><option value="patient_session">AI-patient session</option><option value="nurse_consult">Nurse-patient consult</option><option value="doctor_consult">Doctor-patient consult</option></select><textarea name="source_text" placeholder="Paste a synthetic interaction source. Names, IDs and phone numbers are redacted before the provider call." minLength={12} required /><div><button type="button" className="quiet" onClick={() => setScribeOpen(false)}>Cancel</button><button className="primary" disabled={scribeBusy}>{scribeBusy ? "Generating…" : "Generate DeepSeek note"}</button></div></form>}{noteOpen && <form className="noteForm" onSubmit={submitNote}><select name="entry_type" defaultValue={actor?.role === "staff" ? "staff_note" : "clinician_note"}><option value="staff_note">Staff note</option><option value="clinician_note">Clinician note</option><option value="instruction">Patient instruction</option></select><select name="visibility"><option value="internal">Internal</option><option value="patient">Patient-facing</option></select><textarea name="content" placeholder="Add a concise, attributable note…" minLength={4} required /><div><button type="button" className="quiet" onClick={() => setNoteOpen(false)}>Cancel</button><button className="primary">Save note</button></div></form>}<div className="timelineList">{timeline.map((entry) => {
           const entryComments = comments.filter((comment) => comment.entry_id === entry.id);
           return <article className={`entry ${entry.author_role}`} id={`entry-${entry.id}`} key={entry.id}><div><header><span>{entry.author_name} · {entry.entry_type.replaceAll("_", " ")}</span><time>{formatDate(entry.created_at)}</time></header><p>{entry.content}</p><footer><em>{entry.visibility === "patient" ? "Patient-facing" : "Internal"}</em>{entry.provenance_pointer && <em>Source: {entry.provenance_pointer}</em>}{canAdd && <button onClick={() => showVersions(entry)}>History · v{entry.version}</button>}{canCollaborate && <button onClick={() => setCommentOpen(commentOpen === entry.id ? undefined : entry.id)}>Comment{entryComments.length ? ` · ${entryComments.length}` : ""}</button>}</footer>{canCollaborate && entryComments.length > 0 && <section className="commentThread" aria-label="Internal collaboration comments">{entryComments.map((comment) => <article className={`comment ${comment.resolved ? "resolved" : ""}`} key={comment.id}><div><b>{comment.author_name}</b>{comment.mention_role && <span>@{comment.mention_role}</span>}<time>{formatDate(comment.created_at)}</time></div><p>{comment.body}</p><button onClick={() => setCommentResolution(comment.id, !comment.resolved)}>{comment.resolved ? "Reopen" : "Resolve"}</button></article>)}</section>}{canCollaborate && commentOpen === entry.id && <form className="commentForm" onSubmit={(event) => submitComment(entry.id, event)}><textarea name="body" placeholder="Internal collaboration comment…" minLength={2} maxLength={1200} required /><div><select name="mention_role" defaultValue=""><option value="">No role mention</option><option value="clinician">@clinician</option><option value="staff">@staff</option></select><button type="button" className="quiet" onClick={() => setCommentOpen(undefined)}>Cancel</button><button className="primary">Add comment</button></div></form>}</div></article>;

@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 CREATE TABLE IF NOT EXISTS entry_versions (id uuid PRIMARY KEY, entry_id uuid NOT NULL REFERENCES entries(id), version integer NOT NULL, content text NOT NULL, actor_id uuid NOT NULL REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(entry_id, version));
 CREATE TABLE IF NOT EXISTS comments (id uuid PRIMARY KEY, entry_id uuid NOT NULL REFERENCES entries(id), clinic_id uuid NOT NULL REFERENCES clinics(id), author_id uuid NOT NULL REFERENCES users(id), body text NOT NULL, mention_role text, resolved boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS clinical_conflicts (
+  id uuid PRIMARY KEY, clinic_id uuid NOT NULL REFERENCES clinics(id), patient_id uuid NOT NULL REFERENCES patients(id),
+  newer_entry_id uuid NOT NULL REFERENCES entries(id), prior_entry_id uuid NOT NULL REFERENCES entries(id),
+  category text NOT NULL CHECK (category IN ('allergy','medication_dose','care_plan')), reason text NOT NULL,
+  status text NOT NULL DEFAULT 'needs_clinician_review' CHECK (status IN ('needs_clinician_review','confirmed_new','retained_existing')),
+  resolved_by uuid REFERENCES users(id), resolved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(newer_entry_id, prior_entry_id, category)
+);
 CREATE TABLE IF NOT EXISTS highlights (id uuid PRIMARY KEY, patient_id uuid NOT NULL REFERENCES patients(id), entry_id uuid NOT NULL REFERENCES entries(id), excerpt text NOT NULL, risk_reason text NOT NULL, importance integer NOT NULL, provenance_pointer text NOT NULL, status text NOT NULL DEFAULT 'suggested', created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS audit_log (id uuid PRIMARY KEY, clinic_id uuid NOT NULL REFERENCES clinics(id), actor_id uuid NOT NULL REFERENCES users(id), action text NOT NULL, entity_type text NOT NULL, entity_id uuid NOT NULL, metadata jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS scribe_runs (
@@ -37,6 +45,7 @@ CREATE TABLE IF NOT EXISTS importance_learning (
   PRIMARY KEY (clinic_id, entry_type)
 );
 CREATE INDEX IF NOT EXISTS entries_patient_created_idx ON entries(patient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS conflicts_patient_status_idx ON clinical_conflicts(patient_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS audit_clinic_created_idx ON audit_log(clinic_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS scribe_runs_patient_created_idx ON scribe_runs(patient_id, created_at DESC);
 """

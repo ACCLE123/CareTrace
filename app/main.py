@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.conflicts import detect_conflicts
 from app.db import IDS, audit, connection, init_db
 from app.policy import AuthorizationError, ConflictError, Role, can_create_entry, can_edit_entry, redact_for_llm, require_same_clinic
 from app.scribe import (
@@ -72,6 +73,10 @@ class CommentResolutionPayload(BaseModel):
     resolved: bool
 
 
+class ConflictResolutionPayload(BaseModel):
+    decision: Literal["confirmed_new", "retained_existing"]
+
+
 class FeedbackPayload(BaseModel):
     accepted: bool
 
@@ -111,6 +116,26 @@ def entry_scope(a: dict, entry_id: str) -> dict:
     if a["role"] == Role.PATIENT and entry["visibility"] != "patient":
         raise HTTPException(403, "Patient-facing view excludes internal source notes.")
     return entry
+
+
+def flag_content_conflicts(conn: psycopg.Connection, *, clinic_id: str, patient_id: str, newer_entry_id: str, newer_content: str) -> int:
+    """Persist only deterministic contradictions with an earlier entry; never resolve them automatically."""
+    prior_entries = conn.execute(
+        "SELECT id::text, content FROM entries WHERE patient_id=%s AND id<>%s ORDER BY created_at DESC",
+        (patient_id, newer_entry_id),
+    ).fetchall()
+    flagged = 0
+    for prior in prior_entries:
+        for conflict in detect_conflicts(newer_content, prior["content"]):
+            inserted = conn.execute(
+                """INSERT INTO clinical_conflicts (id,clinic_id,patient_id,newer_entry_id,prior_entry_id,category,reason)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (newer_entry_id,prior_entry_id,category) DO NOTHING
+                   RETURNING id""",
+                (uuid4(), clinic_id, patient_id, newer_entry_id, prior["id"], conflict.category, conflict.reason),
+            ).fetchone()
+            flagged += int(inserted is not None)
+    return flagged
 
 
 @app.get("/")
@@ -174,7 +199,8 @@ def create_entry(patient_id: str, payload: EntryPayload, a: dict = Depends(actor
         conn.execute("""INSERT INTO entries (id,patient_id,clinic_id,author_id,author_role,entry_type,visibility,section,content)
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""", (entry_id, patient_id, a["clinic_id"], a["id"], a["role"], payload.entry_type, payload.visibility, payload.section, payload.content))
         conn.execute("INSERT INTO entry_versions (id,entry_id,version,content,actor_id) VALUES (%s,%s,1,%s,%s)", (uuid4(), entry_id, payload.content, a["id"]))
-        audit(conn, a["clinic_id"], a["id"], "entry_created", "entry", entry_id, {"type": payload.entry_type, "visibility": payload.visibility})
+        conflict_count = flag_content_conflicts(conn, clinic_id=a["clinic_id"], patient_id=patient_id, newer_entry_id=entry_id, newer_content=payload.content)
+        audit(conn, a["clinic_id"], a["id"], "entry_created", "entry", entry_id, {"type": payload.entry_type, "visibility": payload.visibility, "conflicts_flagged": conflict_count})
         conn.commit()
     return {"id": entry_id, "version": 1}
 
@@ -243,7 +269,8 @@ def create_ai_scribed_note(patient_id: str, payload: ScribePayload, a: dict = De
                 (highlight_id, patient_id, summary_id, output.summary[:300], reason, importance, summary_pointer),
             )
             highlight = {"id": highlight_id, "importance": importance, "risk_reason": reason, "provenance_pointer": summary_pointer}
-        audit(conn, a["clinic_id"], a["id"], "scribe_generated", "scribe_run", run_id, {"interaction_type": payload.interaction_type, "model": model, "prompt_version": PROMPT_VERSION, "source_entry_id": source_id, "ai_entry_id": summary_id})
+        conflict_count = flag_content_conflicts(conn, clinic_id=a["clinic_id"], patient_id=patient_id, newer_entry_id=source_id, newer_content=payload.source_text)
+        audit(conn, a["clinic_id"], a["id"], "scribe_generated", "scribe_run", run_id, {"interaction_type": payload.interaction_type, "model": model, "prompt_version": PROMPT_VERSION, "source_entry_id": source_id, "ai_entry_id": summary_id, "conflicts_flagged": conflict_count})
         conn.commit()
     return {"source_entry_id": source_id, "ai_entry_id": summary_id, "model": model, "redacted_preview": redact_source(payload.source_text), "output": output.model_dump(), "highlight": highlight}
 
@@ -260,7 +287,8 @@ def edit_entry(entry_id: str, payload: EditPayload, a: dict = Depends(actor)) ->
         if not result:
             raise HTTPException(409, "This entry changed. Refresh before editing.")
         conn.execute("INSERT INTO entry_versions (id,entry_id,version,content,actor_id) VALUES (%s,%s,%s,%s,%s)", (uuid4(), entry_id, result["version"], payload.content, a["id"]))
-        audit(conn, a["clinic_id"], a["id"], "entry_updated", "entry", entry_id, {"version": result["version"]})
+        conflict_count = flag_content_conflicts(conn, clinic_id=a["clinic_id"], patient_id=entry["patient_id"], newer_entry_id=entry_id, newer_content=payload.content)
+        audit(conn, a["clinic_id"], a["id"], "entry_updated", "entry", entry_id, {"version": result["version"], "conflicts_flagged": conflict_count})
         conn.commit()
     return {"id": entry_id, "version": result["version"]}
 
@@ -287,7 +315,8 @@ def revert(entry_id: str, payload: RevertPayload, a: dict = Depends(actor)) -> d
         if not result:
             raise HTTPException(409, "This entry changed. Refresh before reverting.")
         conn.execute("INSERT INTO entry_versions (id,entry_id,version,content,actor_id) VALUES (%s,%s,%s,%s,%s)", (uuid4(), entry_id, result["version"], target["content"], a["id"]))
-        audit(conn, a["clinic_id"], a["id"], "entry_reverted", "entry", entry_id, {"from_version": payload.target_version, "new_version": result["version"]})
+        conflict_count = flag_content_conflicts(conn, clinic_id=a["clinic_id"], patient_id=entry["patient_id"], newer_entry_id=entry_id, newer_content=target["content"])
+        audit(conn, a["clinic_id"], a["id"], "entry_reverted", "entry", entry_id, {"from_version": payload.target_version, "new_version": result["version"], "conflicts_flagged": conflict_count})
         conn.commit()
     return {"id": entry_id, "version": result["version"]}
 
@@ -337,6 +366,43 @@ def resolve_comment(comment_id: str, payload: CommentResolutionPayload, a: dict 
             audit(conn, a["clinic_id"], a["id"], "comment_resolved" if payload.resolved else "comment_reopened", "comment", comment_id)
             conn.commit()
     return {"id": comment_id, "resolved": payload.resolved}
+
+
+@app.get("/api/patients/{patient_id}/conflicts")
+def patient_conflicts(patient_id: str, a: dict = Depends(actor)) -> list[dict]:
+    patient_scope(a, patient_id)
+    if a["role"] not in {Role.STAFF, Role.CLINICIAN, Role.ADMIN}:
+        raise HTTPException(403, "Patients cannot access internal conflict review.")
+    with connection() as conn:
+        return conn.execute(
+            """SELECT c.id::text, c.category, c.reason, c.status, c.created_at,
+                      newer.id::text AS newer_entry_id, newer.content AS newer_content, newer.provenance_pointer AS newer_pointer,
+                      prior.id::text AS prior_entry_id, prior.content AS prior_content, prior.provenance_pointer AS prior_pointer
+               FROM clinical_conflicts c
+               JOIN entries newer ON newer.id=c.newer_entry_id
+               JOIN entries prior ON prior.id=c.prior_entry_id
+               WHERE c.patient_id=%s AND c.clinic_id=%s
+               ORDER BY CASE WHEN c.status='needs_clinician_review' THEN 0 ELSE 1 END, c.created_at DESC""",
+            (patient_id, a["clinic_id"]),
+        ).fetchall()
+
+
+@app.patch("/api/conflicts/{conflict_id}")
+def resolve_conflict(conflict_id: str, payload: ConflictResolutionPayload, a: dict = Depends(actor)) -> dict:
+    if a["role"] != Role.CLINICIAN:
+        raise HTTPException(403, "Only clinicians may resolve clinical-content conflicts.")
+    with connection() as conn:
+        conflict = conn.execute("SELECT id::text, clinic_id::text, status FROM clinical_conflicts WHERE id=%s", (conflict_id,)).fetchone()
+        if not conflict or conflict["clinic_id"] != a["clinic_id"]:
+            raise HTTPException(404, "Conflict not found.")
+        if conflict["status"] == "needs_clinician_review":
+            conn.execute(
+                "UPDATE clinical_conflicts SET status=%s, resolved_by=%s, resolved_at=now() WHERE id=%s",
+                (payload.decision, a["id"], conflict_id),
+            )
+            audit(conn, a["clinic_id"], a["id"], "clinical_conflict_resolved", "clinical_conflict", conflict_id, {"decision": payload.decision})
+            conn.commit()
+    return {"id": conflict_id, "status": payload.decision}
 
 
 @app.post("/api/highlights/{highlight_id}/feedback")

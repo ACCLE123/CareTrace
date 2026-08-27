@@ -7,6 +7,6 @@ CareTrace — external components and licenses
 - PostgreSQL 16 (Docker image) — PostgreSQL License.
 - Pytest 9.0.2 — MIT License.
 - Google Fonts: Manrope and DM Mono — SIL Open Font License 1.1.
+- DeepSeek API (DeepSeek V4 Flash) — hosted model provider used only through the configured backend API key.
 
 No third-party datasets, patient records, hosted AI APIs, or proprietary clinical ontologies are used. All displayed data is synthetic.
-

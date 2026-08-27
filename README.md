@@ -20,6 +20,18 @@ The application runtime uses Neon's **pooled** `DATABASE_URL`, suitable for Verc
 
 For the Vercel **backend** project, add the pooled `DATABASE_URL` and the exact `CORS_ORIGINS` of the deployed frontend in Project Settings → Environment Variables. The frontend only receives `NEXT_PUBLIC_API_BASE_URL`, never the database connection string.
 
+### DeepSeek AI scribe
+
+The AI scribe is a backend-only DeepSeek integration. Add these variables to the **backend** Vercel project (and to your local git-ignored `.env.local` when testing locally):
+
+```bash
+DEEPSEEK_API_KEY=...
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+```
+
+Never put the key in `frontend/` or a `NEXT_PUBLIC_*` variable. The clinician/staff **AI scribe** form accepts synthetic source text only. Before the FastAPI server sends anything to DeepSeek, it redacts titled names, IC/ID numbers, and phone numbers. A successful run persists an internal source entry, a separate `system` AI-scribed entry, the redacted input/model/prompt version, and an exact timeline provenance pointer. If the key is absent or the provider response is malformed, no AI note is written.
+
 ## Run the required automated tests
 
 ```bash
@@ -33,13 +45,15 @@ The test suite includes the four requested files plus a small bonus test:
 - `test_highlight_provenance.py` — every highlight resolves to a timeline entry.
 - `test_concurrent_edits.py` — independent role-owned sections and deterministic optimistic-concurrency conflict.
 - `test_self_learning_importance.py` — bounded feedback learning.
+- `test_deepseek_scribe.py` — redaction happens before the provider request and the structured response contract is validated.
 
 ## Demo script
 
 1. Start as **Dr. Mira Chen**. The Glance View shows a deterministic high-risk allergy signal, the current chest-discomfort escalation, and open actions.
 2. Click **View source in timeline** on any card. It scrolls directly to the source-of-truth entry with author role, entry type, timestamp, and source pointer.
 3. Add a care note or open **History** on a clinician note. Revert a prior version: the operation makes a new snapshot and an audit event rather than mutating history.
-4. Switch to **Nurse Aisha Lim**. Staff can create staff notes but cannot change clinical assessments. Switch to the synthetic patient: internal AI notes and internal collaboration disappear because the API filters them server-side.
+4. Select **AI scribe**, choose a synthetic patient session, nurse consult, or doctor consult, and generate a DeepSeek candidate note. The generated `system` entry points to its source transcript; accept or reject its Glance suggestion as a care-team member.
+5. Switch to **Nurse Aisha Lim**. Staff can create staff notes but cannot change clinical assessments. Switch to the synthetic patient: internal AI notes and internal collaboration disappear because the API filters them server-side.
 
 ## Architecture and controls
 
@@ -48,12 +62,12 @@ The test suite includes the four requested files plus a small bonus test:
 - **No cross-role overwrite:** staff may change only their own staff note; clinicians only clinician notes. Admin is deliberately read-only oversight in this prototype.
 - **Optimistic concurrency:** edits and reverts issue `UPDATE ... WHERE version = expected_version`. A stale write gets HTTP 409 and must refresh. Independent entries can be edited in parallel.
 - **Provenance:** highlights store `timeline:<entry_uuid>#source`; this exact pointer resolves to the producing timeline entry. AI entries also retain an upstream session or consult pointer.
-- **Importance:** high risk tags and explicit escalation/allergy language provide a deterministic safety floor. Care-team acceptance adds a bounded `+5` type weight, never suppressing a safety floor. Scores are prioritisation suggestions, not clinical certainty.
+- **Importance:** high risk tags and explicit escalation/allergy language provide a deterministic safety floor. Care-team acceptance adds a persisted, bounded `+5` type weight for future same-type suggestions, never suppressing a safety floor. Scores are prioritisation suggestions, not clinical certainty.
 - **Patient safety:** only `visibility='patient'` clinician-approved instructions may reach a patient response. Internal notes, raw AI entries, comments, audit log, and highlights are excluded by the API.
 
 ## Redaction boundary
 
-`app.policy.redact_for_llm()` removes Singapore/US-style IDs, phone numbers, and titled names before any external model call. The app deliberately does not make a live LLM request; its seed data and demo inputs are synthetic. In production, this function is the egress boundary, supplemented by structured PII detectors, audit-safe logging, TLS, managed PostgreSQL encryption at rest, tenant isolation, and formal threat modelling.
+`app.policy.redact_for_llm()` removes Singapore/US-style IDs, phone numbers, and titled names before every DeepSeek request. The scribe endpoint stores a redacted provider-input record, never the outbound secret or prompt credentials. All seed data and demo inputs remain synthetic. Production would supplement this boundary with structured PII detectors, audit-safe logging, TLS, managed PostgreSQL encryption at rest, tenant isolation, and formal threat modelling.
 
 ## Warm-path latency
 

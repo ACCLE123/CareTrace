@@ -21,6 +21,8 @@ flowchart LR
   A --> R[RBAC + clinic scope\n+entry ownership]
   A --> P[Provenance + highlight policy]
   A --> X[PHI redaction egress boundary]
+  X --> D[DeepSeek V4 Flash\nstructured candidate extraction]
+  D --> A
   R --> DB[(PostgreSQL 16)]
   P --> DB
   DB --> E[entries]
@@ -30,7 +32,9 @@ flowchart LR
   DB --> L[audit_log]
 ```
 
-`docker compose up --build` creates the backend and database containers. The static `frontend/` directory deploys independently to Vercel; its public `CARETRACE_API_BASE_URL` points to the API. PostgreSQL owns durable state; FastAPI initializes schema and clearly synthetic seed data. FastAPI holds no permission state in the client. The selector in the demo sets an `X-Demo-User` header, which the API resolves against `users`; production replaces this only with verified session/JWT claims. CORS permits only explicit configured origins, including the deployed Vercel URL.
+`docker compose up --build` creates the backend and database containers. The Next.js `frontend/` directory deploys independently to Vercel; its public `NEXT_PUBLIC_API_BASE_URL` points to the API. PostgreSQL owns durable state; FastAPI initializes schema and clearly synthetic seed data. FastAPI holds no permission state in the client. The selector in the demo sets an `X-Demo-User` header, which the API resolves against `users`; production replaces this only with verified session/JWT claims. CORS permits only explicit configured origins, including the deployed Vercel URL.
+
+The AI scribe uses DeepSeek V4 Flash only from FastAPI. Synthetic source text is first redacted, then submitted with a strict JSON contract for a non-diagnostic candidate summary, candidate facts, open actions, risk signals, or an explicit abstention reason. One source transcript entry and one `system` AI-scribed entry are committed together with a `scribe_runs` record containing the redacted input, model, prompt version, and output. The AI entry's pointer resolves back to the exact source transcript. A malformed provider response or missing key fails closed: no timeline entry is created.
 
 ### Data schema and lineage
 
@@ -81,7 +85,7 @@ A score is only useful if its behaviour is clear. This prototype has two compone
 - A deterministic floor for explicit high-risk tags and phrases such as allergy, escalation, or urgent symptoms. It protects against feedback fatigue.
 - A small, capped feedback bump when a care-team member accepts a suggestion from the same entry type. Rejection does not demote the deterministic floor.
 
-The Glance View exposes the risk reason and source. The system does not claim predictive confidence or make diagnoses. A real evaluation would measure source-link resolution rate, clinician accept/reject rate stratified by risk class, time-to-action, false-negative review, and alert burden. Feedback should be sampled across non-surfaced items to reduce exposure bias.
+The Glance View exposes the risk reason and source. Clinicians and staff can accept/reject a suggestion. Acceptance adds a persisted, capped `+5` same-entry-type weight for future suggestions; rejection is recorded but cannot demote a deterministic high-risk floor. The system does not claim predictive confidence or make diagnoses. A real evaluation would measure source-link resolution rate, clinician accept/reject rate stratified by risk class, time-to-action, false-negative review, and alert burden. Feedback should be sampled across non-surfaced items to reduce exposure bias.
 
 ## Trade-offs and next steps
 

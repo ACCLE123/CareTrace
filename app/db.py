@@ -24,8 +24,21 @@ CREATE TABLE IF NOT EXISTS entry_versions (id uuid PRIMARY KEY, entry_id uuid NO
 CREATE TABLE IF NOT EXISTS comments (id uuid PRIMARY KEY, entry_id uuid NOT NULL REFERENCES entries(id), clinic_id uuid NOT NULL REFERENCES clinics(id), author_id uuid NOT NULL REFERENCES users(id), body text NOT NULL, mention_role text, resolved boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS highlights (id uuid PRIMARY KEY, patient_id uuid NOT NULL REFERENCES patients(id), entry_id uuid NOT NULL REFERENCES entries(id), excerpt text NOT NULL, risk_reason text NOT NULL, importance integer NOT NULL, provenance_pointer text NOT NULL, status text NOT NULL DEFAULT 'suggested', created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS audit_log (id uuid PRIMARY KEY, clinic_id uuid NOT NULL REFERENCES clinics(id), actor_id uuid NOT NULL REFERENCES users(id), action text NOT NULL, entity_type text NOT NULL, entity_id uuid NOT NULL, metadata jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS scribe_runs (
+  id uuid PRIMARY KEY, clinic_id uuid NOT NULL REFERENCES clinics(id), patient_id uuid NOT NULL REFERENCES patients(id),
+  source_entry_id uuid NOT NULL UNIQUE REFERENCES entries(id), ai_entry_id uuid NOT NULL UNIQUE REFERENCES entries(id),
+  interaction_type text NOT NULL CHECK (interaction_type IN ('patient_session','nurse_consult','doctor_consult')),
+  model text NOT NULL, prompt_version text NOT NULL, redacted_input text NOT NULL, output jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS importance_learning (
+  clinic_id uuid NOT NULL REFERENCES clinics(id), entry_type text NOT NULL,
+  accepted_count integer NOT NULL DEFAULT 0, rejected_count integer NOT NULL DEFAULT 0, weight integer NOT NULL DEFAULT 0 CHECK (weight BETWEEN 0 AND 20),
+  PRIMARY KEY (clinic_id, entry_type)
+);
 CREATE INDEX IF NOT EXISTS entries_patient_created_idx ON entries(patient_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS audit_clinic_created_idx ON audit_log(clinic_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS scribe_runs_patient_created_idx ON scribe_runs(patient_id, created_at DESC);
 """
 
 IDS = {

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CareTrace · Nightingale demo</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand"><span class="mark">✦</span><span>CareTrace</span><small>clinical collaboration prototype</small></div>
+      <label class="identity">Demo role <select id="identity"></select></label>
+    </header>
+    <main>
+      <aside>
+        <p class="eyebrow">ONE SHARED CARE NOTE</p>
+        <h1 id="patient-name">Loading…</h1>
+        <p class="subtle">Synthetic patient · Never for diagnosis</p>
+        <nav>
+          <a class="active" href="#glance">Glance view</a>
+          <a href="#timeline">Longitudinal timeline</a>
+          <a href="#trust">Trust & provenance</a>
+        </nav>
+        <section class="guardrail">
+          <strong>Safety boundary</strong>
+          <p>AI extracts traceable candidate facts. The care team decides; the patient only sees clinician-approved instructions.</p>
+        </section>
+      </aside>
+      <section class="workspace">
+        <section id="glance" class="glance">
+          <div class="section-heading"><div><p class="eyebrow">CONSULT SNAPSHOT</p><h2>What needs attention now</h2></div><span class="latency">Warm path <b>8ms</b></span></div>
+          <p id="policy" class="policy"></p>
+          <div id="highlights" class="highlights"></div>
+          <div class="open-actions"><h3>Open actions</h3><div id="actions"></div></div>
+        </section>
+        <section id="timeline" class="timeline-section">
+          <div class="section-heading"><div><p class="eyebrow">SOURCE OF TRUTH</p><h2>Longitudinal timeline</h2></div><button id="new-note" class="primary">Add care note</button></div>
+          <form id="note-form" class="note-form hidden">
+            <select name="entry_type"><option value="staff_note">Staff note</option><option value="clinician_note">Clinician note</option><option value="instruction">Patient instruction</option></select>
+            <select name="visibility"><option value="internal">Internal</option><option value="patient">Patient-facing</option></select>
+            <textarea name="content" placeholder="Add a concise, attributable note…" required></textarea>
+            <div><button type="button" id="cancel-note" class="quiet">Cancel</button><button class="primary">Save note</button></div>
+          </form>
+          <div id="timeline-list" class="timeline-list"></div>
+        </section>
+        <section id="trust" class="trust"><div><p class="eyebrow">TRUST MODEL</p><h2>Auditable by design</h2></div><div class="trust-grid"><p><b>Provenance</b><br/>Every highlight links directly to the entry that generated it.</p><p><b>Permissions</b><br/>The API checks role and clinic scope on every request, not just the screen.</p><p><b>Calibration</b><br/>Feedback is bounded. Critical classes keep a deterministic safety floor.</p></div></section>
+      </section>
+    </main>
+    <dialog id="versions"><article><button id="close-dialog" class="close">×</button><p class="eyebrow">REVISION HISTORY</p><h2>Note versions</h2><div id="version-list"></div></article></dialog>
+    <div id="toast" role="status"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+

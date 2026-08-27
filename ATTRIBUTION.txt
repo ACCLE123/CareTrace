@@ -1,0 +1,12 @@
+CareTrace — external components and licenses
+
+- Python 3.12 — PSF License.
+- FastAPI 0.128.0 — MIT License.
+- Uvicorn 0.39.0 — BSD 3-Clause License.
+- Psycopg 3.2.13 — PostgreSQL License.
+- PostgreSQL 16 (Docker image) — PostgreSQL License.
+- Pytest 9.0.2 — MIT License.
+- Google Fonts: Manrope and DM Mono — SIL Open Font License 1.1.
+
+No third-party datasets, patient records, hosted AI APIs, or proprietary clinical ontologies are used. All displayed data is synthetic.
+

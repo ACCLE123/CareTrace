@@ -85,24 +85,26 @@ export default function CareTracePage() {
   async function submitNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!patient) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     try {
       await request(`/api/patients/${patient.id}/entries`, { method: "POST", body: JSON.stringify(Object.fromEntries(form)) });
-      event.currentTarget.reset(); setNoteOpen(false); setMessage("Saved with version 1 and an audit record."); await refresh();
+      formElement.reset(); setNoteOpen(false); setMessage("Saved with version 1 and an audit record."); await refresh();
     } catch (error) { setMessage((error as Error).message); }
   }
 
   async function submitScribe(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!patient) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setScribeBusy(true);
     try {
       await request(`/api/patients/${patient.id}/scribe`, {
         method: "POST",
         body: JSON.stringify({ interaction_type: form.get("interaction_type") as ScribeSource, source_text: form.get("source_text") })
       });
-      event.currentTarget.reset(); setScribeOpen(false);
+      formElement.reset(); setScribeOpen(false);
       setMessage("DeepSeek created a traceable internal candidate note."); await refresh();
     } catch (error) { setMessage((error as Error).message); }
     finally { setScribeBusy(false); }
